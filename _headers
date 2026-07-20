@@ -1,0 +1,4 @@
+# Response headers for all paths (Cloudflare Pages).
+/*
+  Cache-Control: public, no-transform, max-age=600
+  X-Content-Type-Options: nosniff

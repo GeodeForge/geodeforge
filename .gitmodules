@@ -1,0 +1,9 @@
+[submodule "geodeqr"]
+	path = geodeqr
+	url = https://github.com/GeodeForge/geodeqr.git
+[submodule "geodepdf"]
+	path = geodepdf
+	url = https://github.com/GeodeForge/geodepdf
+[submodule "geodecode"]
+	path = geodecode
+	url = https://github.com/GeodeForge/geodecode.git
