@@ -4,8 +4,8 @@ The code in this repository is MIT-licensed — see [`LICENSE`](LICENSE).
 
 The following identify the GeodeForge studio and are **not** part of that grant:
 
-- the names **GeodeForge**, **GeodeQR**, and **GeodePDF**;
-- the geode mark, the geode-eye finder mark, the Geode+[PDF] lockup, the wordmark and
+- the names **GeodeForge**, **GeodeQR**, **GeodePDF**, and **GeodeQuill**;
+- the geode mark, the geode-eye finder mark, the Geode+[PDF] lockup, the GeodeQuill nib mark, the wordmark and
   strapline bands, and the other brand images in this repository's asset folders.
 
 You are welcome to use, fork, and redistribute the code under the LICENSE terms. If you

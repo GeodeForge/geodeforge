@@ -7,3 +7,6 @@
 [submodule "geodecode"]
 	path = geodecode
 	url = https://github.com/GeodeForge/geodecode.git
+[submodule "geodequill"]
+	path = geodequill
+	url = https://github.com/GeodeForge/geodequill.git

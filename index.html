@@ -17,7 +17,7 @@
 <meta name="twitter:description" content="A one-person studio crafting open-source web tools that do what they say — and let you check, right in your browser."/>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"GeodeForge","url":"https://geodeforge.com/","description":"GeodeForge is a one-person studio that crafts open-source tools that do what they say, and let you check — in your browser."}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"GeodeForge","url":"https://geodeforge.com/"}</script>
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"name":"GeodeQR","url":"https://geodeforge.com/geodeqr/"},{"@type":"ListItem","position":2,"name":"GeodePDF","url":"https://geodeforge.com/geodepdf/"},{"@type":"ListItem","position":3,"name":"GeodeCode","url":"https://geodeforge.com/geodecode/"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"name":"GeodeQR","url":"https://geodeforge.com/geodeqr/"},{"@type":"ListItem","position":2,"name":"GeodePDF","url":"https://geodeforge.com/geodepdf/"},{"@type":"ListItem","position":3,"name":"GeodeCode","url":"https://geodeforge.com/geodecode/"},{"@type":"ListItem","position":4,"name":"GeodeQuill","url":"https://geodeforge.com/geodequill/"}]}</script>
 <style>
 :root{
 
@@ -161,6 +161,8 @@ footer a{color:var(--muted)}
       <span class="go">Open →</span></a>
       <a class="card" href="/geodecode/"><h3>GeodeCode</h3><p>Clean code and text before you paste it — strips what you list and proves it, all in your browser. Flags what else looks sensitive.</p>
       <span class="go">Open →</span></a>
+      <a class="card" href="/geodequill/"><h3>GeodeQuill</h3><p>Teach your AI app to write in your voice, in the tone you pick. Works inside ChatGPT, Claude and other AI apps.</p>
+      <span class="go">Open →</span></a>
       <div class="card soon"><h3>Coming soon</h3><p>The next tool is on the bench.</p></div></noscript>
     </div>
   </section>
@@ -169,9 +171,10 @@ footer a{color:var(--muted)}
     <p>None of our pages carry analytics, cookies, or a single third-party request.</p>
 
     <h2>We invite you to double-check our work</h2>
-    <p>Open your browser's developer tools, switch to the Network tab, and open any tool
-    here and nothing leaves your device. Even when you buy a certified receipt, only its
-    fingerprint is sent to be signed — never your file.</p>
+    <p>Open your browser's developer tools, switch to the Network tab, and open any of our
+    browser tools — GeodeQR, GeodePDF, GeodeCode — and nothing leaves your device.
+    GeodeQuill works inside your AI app instead, so what you write there goes to that
+    app's maker, never to us.</p>
     <p><a href="https://github.com/GeodeForge" rel="noopener">The whole source is on
     GitHub. Read it. Fork it. Run it offline.</a></p>
     <p>Found a bug, or a claim that doesn't hold up? Tell us — an example helps enormously,
@@ -208,6 +211,10 @@ const TOOLS = [
     pitch: 'Clean code and text before you paste it — strips what you list and proves it, ' +
            'all in your browser. Flags what else looks sensitive.',
     href: '/geodecode/', status: 'live', icon: 'assets/geodecode-icon.webp' },
+  { name: 'GeodeQuill',
+    pitch: 'Teach your AI app to write in your voice, in the tone you pick. ' +
+           'Works inside ChatGPT, Claude and other AI apps.',
+    href: '/geodequill/', status: 'live', icon: 'assets/geodequill-icon.svg' },
   { name: '', pitch: 'The next tool is on the bench.', href: '', status: 'soon', icon: '' }
 ];
 
