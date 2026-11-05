@@ -1,6 +1,7 @@
 # Response headers for all paths (Cloudflare Pages).
+# Browsers check before reusing any file, so a release never mixes new pages with old scripts.
 /*
-  Cache-Control: public, no-transform, max-age=600
+  Cache-Control: public, no-transform, max-age=0, must-revalidate
   X-Content-Type-Options: nosniff
 
 # The check page engine: compressed, and kept by browsers (the folder name changes with each engine version).
