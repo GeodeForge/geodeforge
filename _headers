@@ -8,3 +8,11 @@
 /geodequill/check/pyodide-314.0.7/*
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
+
+# GeodePDF: scripts run only from this site's own files, never from inside a document or an inline snippet.
+/geodepdf/*
+  Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'self'
+
+# GeodeQR's page is also served at this address and keeps its own rules.
+/geodepdf/qr/*
+  ! Content-Security-Policy
