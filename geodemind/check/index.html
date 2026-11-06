@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-KR29UOY1RK5eEGD/6lpqhdgqx+3a2Z7i9yluAyT7pXQ='; style-src 'sha256-E8UpmtH8i2TEFOPRBbwQXPSW5xUi34paFM+lXv3BfNs='; connect-src 'none'; img-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-WcJmG+LOHswkn8YHDRgjWUvuHybeio0wxXfUAHq+39I='; style-src 'sha256-E8UpmtH8i2TEFOPRBbwQXPSW5xUi34paFM+lXv3BfNs='; connect-src 'none'; img-src 'none'; form-action 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Check GeodeMind records</title>
@@ -507,8 +507,9 @@ async function runRecords(){
   $('#recmsg').textContent = '';
   if (!r.ok) { $('#recmsg').textContent = r.why + '.'; return; }
   const bad = r.rejected.length > 0 || r.copied;
-  $('#recverdict').className = bad ? 'rejected' : (r.unchecked || !used.size ? 'unsigned' : 'proven');
-  $('#recverdict').textContent = bad ? 'PROBLEMS FOUND' : (r.unchecked || !used.size ? 'NOT FULLY CHECKED' : 'NO CHANGES FOUND');
+  const gaps = ((r.series && r.series.series) || []).reduce((n, s) => n + (s.missingCount || 0), 0);
+  $('#recverdict').className = bad ? 'rejected' : (r.unchecked || !used.size || gaps ? 'unsigned' : 'proven');
+  $('#recverdict').textContent = bad ? 'PROBLEMS FOUND' : (r.unchecked || !used.size ? 'NOT FULLY CHECKED' : gaps ? 'NO CHANGES FOUND, BUT ' + gaps + (gaps === 1 ? ' RECORD IS' : ' RECORDS ARE') + ' MISSING' : 'NO CHANGES FOUND');
   say('checked ' + r.total + ' record(s)' + (r.madeAt ? ', exported ' + r.madeAt : '') + ': ' + Object.entries(r.tally).map(([v,n]) => v + ' ' + n).join(', '));
   for (const x of r.rejected.slice(0, 20)) say('REJECTED ' + x.name + ': ' + x.why);
   if (r.rejected.length > 20) say('and ' + (r.rejected.length - 20) + ' more rejected');
