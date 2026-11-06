@@ -1,0 +1,526 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-KR29UOY1RK5eEGD/6lpqhdgqx+3a2Z7i9yluAyT7pXQ='; style-src 'sha256-E8UpmtH8i2TEFOPRBbwQXPSW5xUi34paFM+lXv3BfNs='; connect-src 'none'; img-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Check GeodeMind records</title>
+<style>
+:root{--bg:#06070c;--card:#2d5086;--line:#a7b9d3;--text:#fff;--muted:#cdc6dc;--ink:#e2b057;--btn:#0f9982;--ok:#8fdec2;--warn:#E8C07A;--bad:#F09AA0;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:2rem}
+.wrap{max-width:680px;margin:0 auto}h1{font-size:clamp(24px,4vw,34px);margin:.2rem 0}
+.sub{color:var(--muted);margin:.3rem 0 1.5rem}
+.invite{font-size:1.05rem;margin:1.6rem 0 .3rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.2rem 1.3rem;margin:1rem 0}
+label{display:block;font-weight:600;margin:.7rem 0 .3rem}input[type=file]{width:100%;color:var(--muted)}
+button{background:var(--btn);color:#fff;border:0;border-radius:9px;padding:.7rem 1.3rem;font-weight:700;cursor:pointer;margin-top:1.1rem;font-size:1rem}
+.result{border-top:1px solid var(--line);margin-top:1.4rem;padding-top:1.1rem}
+#verdict,#recverdict{font-size:1.5rem;font-weight:800}.proven{color:var(--ok)}.unsigned{color:var(--warn)}.rejected{color:var(--bad)}
+ul{margin:.7rem 0 0;padding-left:1.15rem}li{margin:.3rem 0;color:var(--muted)}
+.caveat{color:var(--muted);font-size:.9em;margin-top:.9rem}
+.limits{color:var(--ink);font-size:.95em;margin-top:1rem;border-left:3px solid var(--ink);padding-left:.8rem}
+.mono{font-family:var(--mono);font-size:.82em;color:var(--muted);word-break:break-all}
+.hint{color:var(--muted);font-size:.9em}
+.keyline{font-family:var(--mono);color:var(--text);margin-top:.6rem}
+.limits:empty,.keyline:empty{display:none}</style></head><body><div class="wrap">
+<h1>Check GeodeMind records</h1>
+<p class="sub">Someone who uses GeodeMind sent you their records, or a single receipt. This page checks them here, in your browser. Nothing is uploaded: the page carries a lock (a Content Security Policy) that stops it from connecting to any address, and your browser's Network tab shows that nothing leaves.</p>
+<div class="card">
+<label>A records file someone sent you (.json)</label><input type="file" id="records" accept="application/json,.json">
+<label>The sender's public key — their public-key.json (optional: the file carries one)</label><input type="file" id="recpub">
+<button id="gorecords">Check the records</button><p class="hint" id="recmsg"></p>
+<div id="recverdict"></div><ul id="recout"></ul><p class="limits" id="recwho"></p>
+</div>
+<div class="card">
+<label>One receipt (.json)</label><input type="file" id="rcpt" accept="application/json,.json">
+<label>The message it describes, if you have it (optional)</label><input type="file" id="payload">
+<label>The sender's public key — their public-key.json, or the key as hex (optional)</label><input type="file" id="pub">
+<button id="go">Check</button><p class="hint" id="msg"></p>
+<div class="result" id="result" hidden>
+<div id="verdict"></div><p class="keyline" id="keyline"></p><ul id="detail"></ul><p class="limits" id="siglimit"></p><p class="limits" id="limits"></p><p class="caveat" id="caveat"></p><p class="mono" id="hashline"></p>
+</div></div>
+<div class="card">
+<label>Several receipts from one computer — to see whether any numbers are missing or repeated</label><input type="file" id="many" multiple accept="application/json,.json">
+<label>The sender's public key (optional)</label><input type="file" id="manypub">
+<button id="gomany">Check them together</button><p class="hint" id="manymsg"></p>
+<ul id="manyout"></ul>
+</div>
+<h2 class="invite">We invite you to double-check our work</h2>
+<p class="hint">What this page can and cannot tell you is printed with every result. A record shows how many values from the sender's list were replaced before a message left, and fingerprints what left; it cannot show that a message was safe, and it says nothing about anything that was not on their list. Found something it missed, or something awkward in how this reads or works? Write to geodemind@geodeforge.com.</p>
+</div>
+<script type="module">const PRODUCT = Object.freeze({ name: "GeodeMind", slug: "geodemind" });
+
+const SPEC_1_0 = PRODUCT.slug + '-egress/1.0';
+const RECEIPT_SPEC = PRODUCT.slug + '-egress/1.1';
+const RECEIPT_SPECS = Object.freeze([SPEC_1_0, RECEIPT_SPEC]);
+
+const UNSIGNED_NOTE = 'UNSIGNED: the device that made this receipt had no signing key, so nobody can '
+  + 'confirm which device made it. Its contents can still be checked against the bytes it describes.';
+
+const TIME_SOURCE = 'the clock of the device that made this receipt; nobody outside that device checked it';
+
+const LIMITS_SEARCH = 'Declared values are searched for in the outgoing bytes in any letter case, with or without '
+  + 'accents and with any spacing between words; a first name alone is found only when it is listed on its own. '
+  + 'The pattern rules report only what those rules describe, so expect exceptions. '
+  + 'Judge this by what it says it did.';
+const LIMITS_TIME = 'The time in this receipt is this device\'s own clock at the moment the receipt was made. '
+  + 'Nobody outside this device checked it, and a device\'s clock can be wrong or changed.';
+const LIMITS_COUNT = 'Each receipt this device makes gets the next number in its series. A missing number means a '
+  + 'receipt was deleted (for example when records reached the age the person chose to keep them), was never '
+  + 'written, or was not handed over; it is not by itself a sign of tampering. Two different receipts with the '
+  + `same series and number mean this device's ${PRODUCT.name} folder was copied to another device or restored `
+  + 'from a backup.';
+
+const SERIES = /^[0-9a-f]{32}$/;
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const validTime = (t) => typeof t === 'string' && ISO_TIME.test(t) && Number.isFinite(Date.parse(t));
+const validCount = (c) => !!c && typeof c === 'object' && SERIES.test(c.series)
+  && Number.isSafeInteger(c.number) && c.number > 0;
+
+function canon(v) {
+  if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v);
+}
+
+function numbering(opts) {
+  const now = typeof opts.now === 'function' ? opts.now : Date.now;
+  let count = null;
+  let missing = 'this receipt was made without a counter, so it carries no number';
+  if (typeof opts.count === 'function') {
+    try { count = opts.count(); }
+    catch (e) { missing = `the counter could not be used (${String(e.detail || e.message).slice(0, 160)}), so this receipt carries no number`; }
+  } else if (opts.count && typeof opts.count === 'object') {
+    count = opts.count;
+  }
+  if (count && !validCount(count)) {
+    missing = 'the counter gave a number that could not be read, so this receipt carries no number';
+    count = null;
+  }
+  const at = count && Number.isFinite(count.at) ? count.at : now();
+  return { made_at: new Date(at).toISOString(), count: count ? { series: count.series, number: count.number } : null, missing };
+}
+
+function buildArtifact(doorReceipt, opts = {}) {
+  const n = numbering(opts);
+  const receipt = {
+    spec: RECEIPT_SPEC,
+    tool: { name: PRODUCT.name, surface: opts.surface || doorReceipt.surface || 'endpoint', engine: 'geodecode-engine' },
+    ruleset: doorReceipt.engine,
+    made_at: n.made_at,
+    time_source: TIME_SOURCE,
+    count: n.count,
+    ...(n.count ? {} : { count_missing: n.missing }),
+    request: {
+      sha256_in: doorReceipt.input.sha256,
+      sha256_out: doorReceipt.output.sha256,
+      bytes_out: doorReceipt.output.bytes,
+      text_fields: doorReceipt.input.text_fields,
+    },
+    removed: doorReceipt.removed,
+    flagged: doorReceipt.flagged,
+    ...(doorReceipt.scan_limits ? { scan_limits: doorReceipt.scan_limits } : {}),
+    ...(opts.destination ? { destination: opts.destination } : {}),
+    ...(doorReceipt.service ? { service: doorReceipt.service } : {}),
+    proves: 'that these bytes left this device after this ruleset replaced the declared values — '
+          + 'NOT that the content is safe, and NOT absence of anything not declared',
+    caveat: 'Absence cannot be proven to a third party without disclosing what was absent. '
+          + 'This receipt attests the transformation and identifies the bytes it applied to.',
+    limits: LIMITS_SEARCH + ' ' + LIMITS_TIME + ' ' + LIMITS_COUNT
+          + (opts.feedback ? ' Found something it missed, or something awkward in how this reads '
+                             + 'or works? ' + opts.feedback : ''),
+  };
+  const serialized = canon(receipt);
+  if (typeof opts.sign === 'function') {
+    const { keyId, signature } = opts.sign(serialized);
+    return { receipt, keyId, signature };
+  }
+  return { receipt, unsigned: UNSIGNED_NOTE };
+}
+
+async function recheck(artifact, bytes, opts = {}) {
+  const checks = {};
+  const notes = [];
+  if (!artifact || !artifact.receipt) {
+    return { verdict: 'REJECTED', checks, notes: ['not a receipt artifact'] };
+  }
+  const r = artifact.receipt;
+  checks.specKnown = RECEIPT_SPECS.includes(r.spec);
+  if (!checks.specKnown) notes.push(`unknown receipt spec: ${r.spec}`);
+
+  if (artifact.signature) {
+    checks.signatureValid = typeof opts.verify === 'function'
+      ? !!opts.verify(canon(r), artifact.signature, artifact.keyId)
+      : null;
+    if (checks.signatureValid === null) notes.push('the receipt is signed, but no public key was supplied, so the signature was not checked');
+    else if (!checks.signatureValid) notes.push('SIGNATURE DOES NOT VERIFY — the receipt was altered, or it was made with a different key');
+  } else {
+    checks.signatureValid = null;
+    notes.push('UNSIGNED: the content can be checked, but the origin cannot be certified');
+  }
+
+  if (bytes != null) {
+    const hex = await sha256Hex(bytes);
+    checks.hashMatch = hex === r.request?.sha256_out;
+    if (!checks.hashMatch) notes.push('the supplied bytes are NOT the ones this receipt describes');
+  } else {
+    checks.hashMatch = null;
+    notes.push('no payload supplied, so the receipt was not tied to any bytes');
+  }
+
+  let whole = !!(r.request?.sha256_out && r.removed && typeof r.removed.items === 'number');
+  checks.timed = null;
+  checks.numbered = null;
+  if (r.spec === SPEC_1_0) {
+    notes.push('made before receipts carried a time or a number, so it does not say when it was made, and a missing receipt beside it cannot be noticed');
+  } else if (checks.specKnown) {
+    checks.timed = validTime(r.made_at);
+    if (!checks.timed) notes.push('the receipt has no readable time, which its spec requires');
+    checks.numbered = validCount(r.count);
+    const saysWhyNot = r.count === null && typeof r.count_missing === 'string' && r.count_missing.length > 0;
+    if (!checks.numbered && !saysWhyNot) notes.push('the receipt has no readable number, which its spec requires');
+    if (!checks.numbered && saysWhyNot) notes.push(`this receipt carries no number: ${r.count_missing}`);
+    whole = whole && checks.timed && (checks.numbered || saysWhyNot);
+    const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+    if (checks.timed && Date.parse(r.made_at) - now > 24 * 3600000) {
+      notes.push(`it says it was made at ${r.made_at}, which is later than the checking computer's clock says it is now; one of the two clocks is wrong`);
+    }
+  }
+  checks.selfConsistent = whole;
+  if (!checks.selfConsistent) notes.push('the receipt is missing fields its own spec requires');
+
+  let verdict;
+  if (checks.signatureValid === false || checks.hashMatch === false || !checks.selfConsistent || !checks.specKnown) {
+    verdict = 'REJECTED';
+  } else if (checks.signatureValid === true && checks.hashMatch === true) {
+    verdict = 'PROVEN';
+  } else if (artifact.signature) {
+    verdict = 'SIGNED-NOT-PROVEN';
+  } else {
+    verdict = 'VERIFIED-UNSIGNED';
+  }
+  return {
+    verdict, checks, notes, receipt: r,
+    made: checks.timed ? r.made_at : null,
+    count: checks.numbered ? { series: r.count.series, number: r.count.number } : null,
+  };
+}
+
+const describeCount = (c) => (c ? `number ${c.number} in series ${c.series.slice(0, 8)}` : null);
+
+function checkSeries(items) {
+  const groups = new Map();
+  const unnumbered = [];
+  for (const it of items || []) {
+    const r = it && it.artifact && it.artifact.receipt;
+    if (!r) continue;
+    if (!RECEIPT_SPECS.includes(r.spec) || r.spec === SPEC_1_0 || !validCount(r.count)) { unnumbered.push(it.name); continue; }
+    const list = groups.get(r.count.series) || [];
+    list.push({ name: it.name, number: r.count.number, made: validTime(r.made_at) ? r.made_at : null, body: canon(r), keyId: it.artifact.keyId || null });
+    groups.set(r.count.series, list);
+  }
+  const series = [];
+  for (const [id, list] of groups) {
+    const byNumber = new Map();
+    for (const e of list) {
+      if (!byNumber.has(e.number)) byNumber.set(e.number, []);
+      byNumber.get(e.number).push(e);
+    }
+    const numbers = [...byNumber.keys()].sort((a, b) => a - b);
+    const missing = [];
+    let missingCount = 0;
+    for (let i = 1; i < numbers.length; i++) {
+      const a = numbers[i - 1] + 1, b = numbers[i] - 1;
+      if (b >= a) { missing.push([a, b]); missingCount += b - a + 1; }
+    }
+    const copies = [];
+    const repeats = [];
+    for (const n of numbers) {
+      const es = byNumber.get(n);
+      if (es.length < 2) continue;
+      const distinct = new Set(es.map((e) => e.body)).size;
+      (distinct > 1 ? copies : repeats).push({ number: n, names: es.map((e) => e.name) });
+    }
+    const clockBack = [];
+    let prev = null;
+    for (const n of numbers) {
+      const e = byNumber.get(n)[0];
+      if (!e.made) continue;
+      if (prev) {
+        const back = Date.parse(prev.made) - Date.parse(e.made);
+        if (back > 1000) clockBack.push({ from: prev.number, to: n, seconds: Math.round(back / 1000) });
+      }
+      prev = e;
+    }
+    const keys = [...new Set(list.map((e) => e.keyId).filter(Boolean))];
+    series.push({ series: id, receipts: list.length, first: numbers[0], last: numbers[numbers.length - 1], missing, missingCount, copies, repeats, clockBack, keys });
+  }
+  series.sort((a, b) => b.receipts - a.receipts);
+  return { series, unnumbered };
+}
+
+const ranges = (list, most = 6) => {
+  const shown = list.slice(0, most).map(([a, b]) => (a === b ? String(a) : `${a} to ${b}`)).join(', ');
+  return list.length > most ? `${shown}, and ${list.length - most} more stretch(es)` : shown;
+};
+const names = (list, most = 3) => (list.length > most ? `${list.slice(0, most).join(', ')} and ${list.length - most} more` : list.join(', '));
+
+function describeSeries(result) {
+  const lines = [];
+  const { series, unnumbered } = result;
+  if (series.length > 1) {
+    lines.push(`These receipts come from ${series.length} different series. Each series is one ${PRODUCT.name} folder on one device; a new series starts when that folder is new, or when its counter was lost or damaged.`);
+  }
+  for (const s of series) {
+    const tag = `Series ${s.series.slice(0, 8)}`;
+    lines.push(`${tag}: ${s.receipts} receipt(s), numbered ${s.first} to ${s.last}.`);
+    if (s.missingCount) {
+      lines.push(`${tag}: ${s.missingCount} number(s) missing between them: ${ranges(s.missing)}. A missing number means a receipt was deleted, never written, or not handed over; it is not by itself a sign of tampering.`);
+    } else if (s.last > s.first) {
+      lines.push(`${tag}: no numbers are missing between ${s.first} and ${s.last}.`);
+    }
+    if (s.first > 1) lines.push(`${tag}: numbers before ${s.first} are not in this set; older receipts may have been deleted when they reached the age chosen for keeping them.`);
+    for (const c of s.copies) lines.push(`${tag}: TWO DIFFERENT RECEIPTS CARRY NUMBER ${c.number} (${names(c.names)}). This device's ${PRODUCT.name} folder was copied to another device or restored from a backup.`);
+    for (const c of s.repeats) lines.push(`${tag}: number ${c.number} appears ${c.names.length} times as the same receipt (${names(c.names)}); the same receipt was included more than once.`);
+    for (const c of s.clockBack) lines.push(`${tag}: the device's clock went back ${c.seconds} second(s) between number ${c.from} and number ${c.to}.`);
+    if (s.keys.length > 1) lines.push(`${tag}: signed with ${s.keys.length} different keys; the signing key was replaced during this series.`);
+  }
+  if (unnumbered.length) lines.push(`${unnumbered.length} receipt(s) carry no number: they were made before receipts were numbered, or the counter could not be used (${names(unnumbered)}).`);
+  return lines;
+}
+
+async function sha256Hex(bytes) {
+  const buf = typeof bytes === 'string' ? new TextEncoder().encode(bytes) : bytes;
+  if (globalThis.crypto?.subtle) {
+    const d = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', buf));
+    return [...d].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  throw new Error('no WebCrypto available');
+}
+
+const RECORDS_SPEC = PRODUCT.slug + '-records/1.0';
+const RECORDS_NOTE = `This file holds records ${PRODUCT.name} made on one computer, exported by the person who uses it so that `
+  + 'someone else can check them. Each record says how many values from that person\'s list were replaced in a message '
+  + 'before it left, and fingerprints the bytes that left; it holds none of the values themselves. The public key it '
+  + 'carries shows the records were made with that key and not changed since; it shows who made them only if its '
+  + 'fingerprint matches one the sender gave you in some other way.';
+
+const toBase64 = (u8) => {
+  let s = '';
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+const fromBase64 = (b64) => {
+  const s = atob(String(b64));
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+};
+
+function bundleRecords(entries, { keys = [], range = null, now = Date.now } = {}) {
+  return {
+    spec: RECORDS_SPEC,
+    made_at: new Date(now()).toISOString(),
+    time_source: 'the clock of the computer that made this file; nobody outside that computer checked it',
+    range: range && (range.from || range.to) ? { from: range.from || null, to: range.to || null } : null,
+    about: RECORDS_NOTE,
+    keys: keys.map((k) => ({ keyId: k.keyId, pubHex: k.pubHex })),
+    records: entries.map((e) => ({ name: e.name, artifact: e.artifact, ...(e.sent ? { sent: toBase64(new Uint8Array(e.sent)) } : {}) })),
+  };
+}
+
+const isRecords = (x) => !!x && typeof x === 'object' && typeof x.spec === 'string' && /-records\/\d+\.\d+$/.test(x.spec) && Array.isArray(x.records);
+
+async function checkRecords(bundle, { verify } = {}) {
+  if (!isRecords(bundle)) return { ok: false, why: `this is not a ${PRODUCT.name} records file` };
+  if (bundle.spec !== RECORDS_SPEC) return { ok: false, why: `this records file is of a kind this checker does not know (${String(bundle.spec).slice(0, 60)})` };
+  const tally = {};
+  const rejected = [];
+  const items = [];
+  let unchecked = 0, withSent = 0;
+  const why = (notes) => notes.find((n) => /DOES NOT|NOT the ones|missing fields|unknown receipt spec|not a receipt|no readable/.test(n)) || notes[0];
+  for (const [i, rec] of bundle.records.entries()) {
+    const name = rec && typeof rec.name === 'string' ? rec.name : `record ${i + 1}`;
+    const art = rec && rec.artifact;
+    let bytes = null;
+    if (rec && typeof rec.sent === 'string') {
+      try { bytes = fromBase64(rec.sent); withSent++; } catch { bytes = new Uint8Array(0); }
+    }
+    let good = null;
+    if (art && art.signature && typeof verify === 'function') {
+      try { good = await verify(art); } catch { good = false; }
+    }
+    if (art && art.signature && good === null) unchecked++;
+    const r = await recheck(art, bytes, good === null ? {} : { verify: () => good });
+    tally[r.verdict] = (tally[r.verdict] || 0) + 1;
+    if (r.verdict === 'REJECTED') rejected.push({ name, why: why(r.notes) });
+    else items.push({ name, artifact: art });
+  }
+  const series = checkSeries(items);
+  return {
+    ok: true, total: bundle.records.length, tally, rejected, unchecked, withSent,
+    madeAt: validTime(bundle.made_at) ? bundle.made_at : null,
+    range: bundle.range || null,
+    keyIds: [...new Set(bundle.records.map((r) => r && r.artifact && r.artifact.keyId).filter(Boolean))],
+    series, lines: describeSeries(series),
+    copied: series.series.some((s) => s.copies.length > 0),
+  };
+}
+
+
+const $ = (s) => document.querySelector(s);
+const SIGNATURE_LIMIT = "A signature shows a receipt was made with this key; it does not show who holds the key. To know whose key it is, compare the fingerprint with one its owner published somewhere you already trust.";
+const toHex = (u8) => [...u8].map(b => b.toString(16).padStart(2,'0')).join('');
+async function readPub(text){
+  text = text.trim();
+  let hex = text, named = null;
+  if (text.startsWith('{')) {
+    let j; try { j = JSON.parse(text); } catch { throw new Error('the public key file is not valid JSON'); }
+    hex = String(j.pubHex || ''); named = j.keyId || null;
+  }
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) throw new Error('the public key file does not hold a public key (64 hex characters)');
+  const raw = Uint8Array.from(hex.match(/../g).map(h => parseInt(h,16)));
+  const keyId = 'op-' + toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', raw))).slice(0,16);
+  if (named && named !== keyId) throw new Error('the public key file names key ' + named + ' but holds the key of ' + keyId);
+  const der = new Uint8Array([0x30,0x2a,0x30,0x05,0x06,0x03,0x2b,0x65,0x70,0x03,0x21,0x00, ...raw]);
+  const key = await crypto.subtle.importKey('spki', der, { name:'Ed25519' }, false, ['verify']);
+  return { key, keyId, fingerprint: keyId.slice(3).match(/.{4}/g).join(' ') };
+}
+async function run(){
+  const rf = $('#rcpt').files[0];
+  if(!rf){ $('#msg').textContent = 'Choose a receipt first.'; return; }
+  $('#msg').textContent = 'Checking…';
+  let art;
+  try { art = JSON.parse(await rf.text()); }
+  catch { $('#msg').textContent = 'That file is not valid JSON.'; return; }
+  const pf = $('#payload').files[0];
+  const bytes = pf ? new Uint8Array(await pf.arrayBuffer()) : null;
+  const kf = $('#pub').files[0];
+  let verify, pub = null;
+  if (kf) {
+    try { pub = await readPub(await kf.text()); }
+    catch (e) { $('#result').hidden = true; $('#msg').textContent = e.message + '. Nothing was checked.'; return; }
+  }
+  if (pub && art.signature) {
+    let good = false;
+    try {
+      const sig = Uint8Array.from(String(art.signature).match(/../g).map(h => parseInt(h,16)));
+      good = await crypto.subtle.verify({ name:'Ed25519' }, pub.key, sig, new TextEncoder().encode(canon(art.receipt)));
+    } catch { good = false; }
+    verify = () => good;
+  }
+  const r = await recheck(art, bytes, { verify });
+  $('#msg').textContent = '';
+  $('#result').hidden = false;
+  $('#verdict').className = r.verdict === 'PROVEN' ? 'proven' : r.verdict === 'REJECTED' ? 'rejected' : 'unsigned';
+  $('#verdict').textContent = r.verdict;
+  const d = $('#detail'); d.innerHTML = '';
+  const line = (t) => { const li = document.createElement('li'); li.textContent = t; d.appendChild(li); };
+  line('signature: ' + (r.checks.signatureValid === true ? 'verifies against the key you supplied'
+     : r.checks.signatureValid === false ? 'DOES NOT VERIFY'
+     : art.signature ? 'present, but not checked — supply the public key to check it' : 'none — this receipt is UNSIGNED'));
+  if (art.unsigned) line(art.unsigned);
+  if (pub && art.keyId && art.keyId !== pub.keyId) line('the receipt names key ' + art.keyId + '; the key you supplied is ' + pub.keyId);
+  line('payload: ' + (r.checks.hashMatch === true ? 'matches the receipt'
+     : r.checks.hashMatch === false ? 'DOES NOT MATCH the receipt' : 'not supplied'));
+  if (r.receipt) {
+    const by = Object.entries(r.receipt.removed?.by_label || {}).map(([k,v]) => k + ' x' + v).join(', ');
+    line('declared values replaced: ' + (r.receipt.removed?.items ?? 0) + (by ? ' (' + by + ')' : ''));
+  }
+  if (r.made) line('made at ' + r.made + ', by the clock of the device that made it; nobody outside that device checked it');
+  if (r.count) line(describeCount(r.count));
+  if (r.receipt?.flagged) line('additionally flagged, not replaced: ' + r.receipt.flagged);
+  if (r.receipt?.scan_limits) line('NOTE: ' + r.receipt.scan_limits.lines_not_fully_scanned + ' line(s) exceeded the scan limit and were not pattern-checked');
+  for (const n of r.notes) line(n);
+  $('#keyline').textContent = pub ? ('checked against key ' + pub.fingerprint) : '';
+  $('#siglimit').textContent = r.checks.signatureValid === true ? SIGNATURE_LIMIT : '';
+  $('#limits').textContent = r.receipt?.limits || '';
+  $('#caveat').textContent = r.receipt?.caveat || '';
+  $('#hashline').textContent = r.receipt?.request?.sha256_out ? ('payload sha256 per receipt: ' + r.receipt.request.sha256_out) : '';
+}
+async function runMany(){
+  const files = [...$('#many').files];
+  const out = $('#manyout'); out.innerHTML = '';
+  const say = (t) => { const li = document.createElement('li'); li.textContent = t; out.appendChild(li); };
+  if (!files.length) { $('#manymsg').textContent = 'Choose the receipts first.'; return; }
+  $('#manymsg').textContent = 'Checking…';
+  const kf = $('#manypub').files[0];
+  let pub = null;
+  if (kf) {
+    try { pub = await readPub(await kf.text()); }
+    catch (e) { $('#manymsg').textContent = e.message + '. Nothing was checked.'; return; }
+  }
+  const tally = {}; const items = []; let keyless = 0;
+  for (const f of files) {
+    let art;
+    try { art = JSON.parse(await f.text()); } catch { tally.REJECTED = (tally.REJECTED || 0) + 1; say('REJECTED ' + f.name + ': the file is not a readable receipt'); continue; }
+    let verify;
+    if (pub && art && art.signature) {
+      let good = false;
+      try {
+        const sig = Uint8Array.from(String(art.signature).match(/../g).map(h => parseInt(h,16)));
+        good = await crypto.subtle.verify({ name:'Ed25519' }, pub.key, sig, new TextEncoder().encode(canon(art.receipt)));
+      } catch { good = false; }
+      verify = () => good;
+    } else if (art && art.signature) keyless += 1;
+    const r = await recheck(art, null, { verify });
+    tally[r.verdict] = (tally[r.verdict] || 0) + 1;
+    if (r.verdict === 'REJECTED') say('REJECTED ' + f.name + ': ' + (r.notes.find(n => /DOES NOT|missing fields|unknown receipt spec|not a receipt|no readable/.test(n)) || r.notes[0]));
+    else items.push({ name: f.name, artifact: art });
+  }
+  $('#manymsg').textContent = '';
+  say('checked ' + files.length + ' receipt(s): ' + Object.entries(tally).map(([v,n]) => v + ' ' + n).join(', '));
+  if (keyless) say(keyless + ' signed receipt(s) were not signature-checked: supply the public key to check them');
+  for (const l of describeSeries(checkSeries(items))) say(l);
+  if (items.length) say('Each time comes from the clock of the device that made the receipt; nobody outside that device checked it.');
+}
+async function runRecords(){
+  const f = $('#records').files[0];
+  const out = $('#recout'); out.innerHTML = '';
+  $('#recverdict').textContent = ''; $('#recverdict').className = '';
+  const say = (t) => { const li = document.createElement('li'); li.textContent = t; out.appendChild(li); };
+  if (!f) { $('#recmsg').textContent = 'Choose the records file first.'; return; }
+  $('#recmsg').textContent = 'Checking…';
+  let bundle;
+  try { bundle = JSON.parse(await f.text()); } catch { $('#recmsg').textContent = 'That file is not valid JSON.'; return; }
+  const kf = $('#recpub').files[0];
+  let given = null;
+  if (kf) {
+    try { given = await readPub(await kf.text()); }
+    catch (e) { $('#recmsg').textContent = e.message + '. Nothing was checked.'; return; }
+  }
+  const carried = new Map();
+  for (const k of (Array.isArray(bundle && bundle.keys) ? bundle.keys : [])) {
+    try { const pk = await readPub(String(k.pubHex || '')); if (pk.keyId === k.keyId) carried.set(k.keyId, pk); } catch {}
+  }
+  const used = new Map();
+  const verify = async (art) => {
+    const pk = given || carried.get(art.keyId);
+    if (!pk) return null;
+    used.set(pk.keyId, pk);
+    try {
+      const sig = Uint8Array.from(String(art.signature).match(/../g).map(h => parseInt(h,16)));
+      return await crypto.subtle.verify({ name:'Ed25519' }, pk.key, sig, new TextEncoder().encode(canon(art.receipt)));
+    } catch { return false; }
+  };
+  const r = await checkRecords(bundle, { verify });
+  $('#recmsg').textContent = '';
+  if (!r.ok) { $('#recmsg').textContent = r.why + '.'; return; }
+  const bad = r.rejected.length > 0 || r.copied;
+  $('#recverdict').className = bad ? 'rejected' : (r.unchecked || !used.size ? 'unsigned' : 'proven');
+  $('#recverdict').textContent = bad ? 'PROBLEMS FOUND' : (r.unchecked || !used.size ? 'NOT FULLY CHECKED' : 'NO CHANGES FOUND');
+  say('checked ' + r.total + ' record(s)' + (r.madeAt ? ', exported ' + r.madeAt : '') + ': ' + Object.entries(r.tally).map(([v,n]) => v + ' ' + n).join(', '));
+  for (const x of r.rejected.slice(0, 20)) say('REJECTED ' + x.name + ': ' + x.why);
+  if (r.rejected.length > 20) say('and ' + (r.rejected.length - 20) + ' more rejected');
+  if (r.unchecked) say(r.unchecked + ' signed record(s) could not be checked: the file carries no public key for them; supply the sender\'s key');
+  say(r.withSent ? r.withSent + ' record(s) came with the text that was sent, and each was compared with it' : 'the file does not include the text that was sent, so no record was tied to its bytes; the signatures show the records were not changed');
+  for (const pk of used.values()) say('signed with key ' + pk.fingerprint + (given ? ' (the key you supplied)' : ' (carried in the file)'));
+  if (given) { const other = r.keyIds.filter((k) => k !== given.keyId); if (other.length) say('records signed with other keys than the one you supplied: ' + other.join(', ')); }
+  for (const l of r.lines) say(l);
+  if (r.total) say('Each time comes from the clock of the computer that made the record; nobody outside that computer checked it.');
+  $('#recwho').textContent = used.size && !given ? 'The key carried in the file only shows the records were not changed since they were signed. To know they came from the sender, ask them for their key\'s fingerprint some other way (a message, a call) and compare it with the one above.' : '';
+}
+$('#go').onclick = run;
+$('#gomany').onclick = runMany;
+$('#gorecords').onclick = runRecords;
+window.__ready = true;</script></body></html>
